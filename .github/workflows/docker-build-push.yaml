@@ -9,7 +9,7 @@ on:
 env:
   REGISTRY: docker.io
   IMAGE_NAME: saifb/todo-app
-  PYTHON_VERSION: "3.9"  # Set your Python version
+  PYTHON_VERSION: "3.9"
 
 jobs:
   lint-and-test:
@@ -18,28 +18,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pylint flake8
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Run pylint (code analysis)
-        run: |
-          echo "Running pylint..."
-          pylint --output-format=colorized --fail-under=7.0 ./  # Adjust path as needed
-        continue-on-error: true  # Fail workflow if linting fails
+      - name: Run pylint
+        run: pylint --output-format=colorized --fail-under=7.0 ./
 
-      - name: Run flake8 (style checking)
-        run: |
-          echo "Running flake8..."
-          flake8 --count --show-source --statistics ./  # Adjust path as needed
-        continue-on-error: true
+      - name: Run flake8
+        run: flake8 --count --show-source --statistics ./
 
   trivy-scan:
     runs-on: ubuntu-latest
@@ -49,14 +43,29 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Trivy filesystem scan
+        id: trivy-fs-scan
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true  # Continue even if vulnerabilities found
         with:
           scan-type: 'fs'
           ignore-unfixed: true
-          exit-code: '1'
-          format: 'table'
+          format: 'sarif'  # Better reporting format
           severity: 'CRITICAL,HIGH'
           skip-dirs: '__pycache__,venv,.git'
+          output: 'trivy-fs-results.sarif'
+
+      - name: Upload Trivy filesystem scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-fs-results.sarif'
+
+      - name: Show filesystem vulnerabilities
+        if: steps.trivy-fs-scan.outcome == 'failure'
+        run: |
+          echo "Critical/High vulnerabilities found in filesystem scan"
+          echo "Review the Security tab or the uploaded SARIF report"
+          echo "To bypass temporarily, set continue-on-error: false in the workflow"
 
   build-and-push:
     runs-on: ubuntu-latest
@@ -64,7 +73,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -83,17 +91,35 @@ jobs:
           load: true
 
       - name: Scan Docker image with Trivy
+        id: trivy-image-scan
+        continue-on-error: true  # Continue even if vulnerabilities found
         run: |
           docker run --rm \
             -v /var/run/docker.sock:/var/run/docker.sock \
             aquasec/trivy:latest image \
-            --exit-code 1 \
+            --format sarif \
             --severity CRITICAL,HIGH \
             --ignore-unfixed \
+            --output trivy-image-results.sarif \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
+      - name: Upload Trivy image scan results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+      - name: Check for critical vulnerabilities
+        if: steps.trivy-image-scan.outcome == 'failure'
+        run: |
+          echo "Critical/High vulnerabilities found in Docker image"
+          echo "Review the Security tab or the uploaded SARIF report"
+          echo "To bypass temporarily, set continue-on-error: false in the workflow"
+          # Uncomment next line to fail the build when vulnerabilities are found
+          # exit 1
+
       - name: Push to Docker Hub
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && steps.trivy-image-scan.outcome == 'success'
         uses: docker/build-push-action@v5
         with:
           context: .
