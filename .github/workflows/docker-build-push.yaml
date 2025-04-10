@@ -44,9 +44,8 @@ jobs:
   trivy-scan:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
-      repository-projects: write
+      contents: read
+      packages: write
     needs: lint-and-test
     steps:
       - name: Checkout code
