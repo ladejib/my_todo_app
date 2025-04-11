@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: docker.io/saifb/my_todo_app:latest  # Same as in CI
+          image: docker.io/saifb/todo-app:latest  # Same as in CI
           ports:
             - containerPort: 5000
           imagePullPolicy: Always  # Ensure latest image is pulled
