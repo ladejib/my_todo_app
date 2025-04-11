@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-todo-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: my-todo-app
+  template:
+    metadata:
+      labels:
+        app: my-todo-app
+    spec:
+      containers:
+        - name: app
+          image: docker.io/saifb/my_todo_app:latest  # Same as in CI
+          ports:
+            - containerPort: 5000
+          imagePullPolicy: Always  # Ensure latest image is pulled
